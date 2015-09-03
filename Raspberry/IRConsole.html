@@ -1,0 +1,281 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Raspberry Pi &copy; - Arduino &copy; WEB Server - InfraRed Console</title>
+<style type="text/css">
+body {
+	background-color: #408080;
+}
+
+.on {background-color:#F00;}
+.off {background-color:#FFF;}
+
+</style>
+
+<script type="text/javascript">
+var NCHANNELS = 5; // Number of channel buttons *** Note: homonym definition in sketch ArdIR must be set accordingly
+var timer;
+
+window.onload = function() {
+	el=document.getElementById("reset");el.onclick=ardureset;
+	el=document.getElementById("open");el.onclick=opencomm;
+	el=document.getElementById("getTemp");el.onclick=readtemp;
+	el=document.getElementById("Ch1");el.onclick=setPin;
+	el=document.getElementById("Ch2");el.onclick=setPin;
+	el=document.getElementById("Ch3");el.onclick=setPin;
+	el=document.getElementById("Ch4");el.onclick=setPin;
+	el=document.getElementById("Ch5");el.onclick=setPin;
+	// others could be added here...
+}
+
+// Note:
+// some of the following javascript functions are derived from original 'RaspduinoIO.html' and are no longer used here
+// however, they are still present for future upgrades
+  
+window.onunload=function(){resp=ajax("cmd","close",null,null);};
+
+var PD=[0,0,0,0,0,2,0,1,0,0,0,0,0,0];
+var PV=[0,0,0,0,0,1,0,0,0,0,0,0,0,0];
+
+var FlagOpen=false;
+
+var baud=9600;
+
+// readAll 
+function readPinStatus()
+{
+	resp=ajax("cmd","readAll",null,null);
+	if (resp=="NOK") return;
+	ar=eval("("+resp+")");
+	for (i=0;i<ar.length;i++) {PD[i]=ar[i][0];PV[i]=ar[i][1];}
+	for (i=2;i<PD.length;i++) 
+	{
+		set=document.getElementById("LD"+i);
+		set.selectedIndex=PD[i];
+		val=document.getElementById("VD"+i);
+		setVal(val,PV[i]);
+		if (PD[i]==1) setVal(val,1);
+	}
+	updateAllSetting();
+	updateAllDigVal();
+}
+
+function updateAllSetting()
+{
+	for (i=2;i<PD.length;i++){updateSetting(i);}
+}
+
+function updateSetting(i)
+{
+	seli=document.getElementById("LD"+i).selectedIndex;
+	switch (PD[i])	{case 0: seli=0;break; case 1: seli=2;break; case 2: seli=1;}
+}
+
+function updateAllDigVal()
+{
+	for (i=2;i<PV.length;i++) {updateDigVal(i);}
+}
+
+function updateDigVal(i)
+{
+	el=document.getElementById("VD"+i);
+	setVal(el,PV[i]);
+}
+
+function readAllDig()  
+{
+	resp=ajax("cmd","readAllDigInp",null,null);
+	if (resp=="NOK") return;
+	ar=eval("("+resp+")");
+	for (i=2;i<ar.length;i++) {if (PD[i]<2) {PV[i]=ar[i];updateDigVal(i);}}	
+}
+
+// readAna n
+function getAna() 
+{
+	
+	v=0;
+	pin=parseInt(this.id.substr(1));
+	resp=ajax("cmd","readAna",""+pin,null);
+	v=resp;
+	vid="V"+this.id;vel=document.getElementById(vid);
+	vel.value=""+v; 
+}
+
+function updatePD(i,sel)
+{
+	if (sel=="INP") PD[i]=0;if (sel=="IPL") PD[i]=2; if(sel=="OUT") PD[i]=1;
+}
+
+// setPin n INP|IPL|OUT
+function setPin()
+{
+//window.alert("Set pin in"); // debug
+	s=0;
+	ss="";
+	document.getElementById("id_status").value = "wait..."; document.getElementById("id_status").style.backgroundColor="#FFF";
+	pn=this.id.substr(2);
+	pin=parseInt(pn);
+	resp=ajax("cmd","setPin",""+pin,"pippo"); // note last argument is available!
+	if (resp=="NOK") {
+		document.getElementById("id_status").value = "fail"; document.getElementById("id_status").style.backgroundColor="#F00";
+	}
+	else {
+		document.getElementById("id_status").value = resp; document.getElementById("id_status").style.backgroundColor="#0F0";
+	}
+}
+
+// writeDig n 0|1
+function onOff()
+{
+	pin=parseInt(this.id.substr(1));
+	vid="V"+this.id;vel=document.getElementById(vid);
+	sid="L"+this.id;set=document.getElementById(sid);
+	if ((set.selectedIndex==0) | (set.selectedIndex==1)) return;
+	resp="";
+	if (vel.value=="L") 
+	{resp=ajax("cmd","writeDig",""+pin,"1");if (resp=="OK") {PV[pin]=1;setVal(vel,1);}}
+	else 
+	{resp=ajax("cmd","writeDig",""+pin,"0");if (resp=="OK") {PV[pin]=0;setVal(vel,0);}}
+}
+
+function setVal(el,v)
+{
+	if (v==0) {el.value="L";el.className="off";}
+	else {el.value="H";el.className="on";}
+}
+
+// writeAna n v
+function pwm(el)
+{
+	pin=parseInt(this.id.substr(2));
+	vid="VAD"+pin;vel=document.getElementById(vid);
+	v=vel.value;
+	resp=ajax("cmd","writeAna",""+pin,v);
+	if (resp=="NOK") vel.value="---";
+}
+
+function ardureset() {
+	ajax("cmd","ardureset",null,null);
+}
+
+// open|close
+function opencomm()
+{
+    sopen=document.getElementById("sopen");
+	if (sopen.value=="closed") {
+		resp=ajax("cmd","open",null,baud);
+		if (resp=="OK") {
+			sopen.value="open";
+			sopen.style.backgroundColor="#0F0"; 
+			//timer=setInterval(getOut,1000);
+		}
+		else {
+			sopen.value="closed";sopen.style.backgroundColor="#FFF";
+		}
+	}
+	else {
+	   resp=ajax("cmd","close",null,null);
+	   if (resp=="OK"){sopen.value="closed";sopen.style.backgroundColor="#FFF";} 
+	   else {sopen.value="open";sopen.style.backgroundColor="#0F0";}
+	   clearInterval(timer);
+	}
+	document.getElementById("id_status").value = "idle";
+}
+
+function ajax(cmd,code,pin,val)
+{
+        var browser = navigator.appName;
+        if (browser == "Microsoft Internet Explorer") 
+	         Req=new ActiveXObject("Microsoft.XMLHTTP"); 
+        else Req=new XMLHttpRequest(); 
+        Req.open("post","SerialIO",false);
+        Req.setRequestHeader("Content-Type","application/x-www-form-urlencoded");
+		var params=cmd+"="+code;
+		if (pin!=null) params=params+"&"+"pin="+pin;
+		if (val!=null) params=params+"&"+"val="+val; 
+	//	window.alert("Params = "+params);
+        Req.send(params); 
+		return Req.responseText.trim();
+}
+
+function readtemp() {
+	var NumToSend = NCHANNELS + 1;
+	//window.alert("drrinng "+NumToSend);
+	document.getElementById("id_status").value = "wait..."; document.getElementById("id_status").style.backgroundColor="#FFF";
+	resp=ajax("cmd","setPin",""+ NumToSend,"pippo"); // note last argument is available!
+	if (resp=="NOK") {
+		document.getElementById("id_status").value = "fail"; document.getElementById("id_status").style.backgroundColor="#F00";
+		document.getElementById("TempText").innerHTML= "---"; 
+	}
+	else {
+		document.getElementById("id_status").value = "OK"; document.getElementById("id_status").style.backgroundColor="#0F0";
+		document.getElementById("TempText").innerHTML= resp+"°C";
+	}
+	
+}
+
+</script>
+
+
+
+</head>
+
+<body style="width:900px">
+<table width="100%" border="0" cellspacing="10" cellpadding="2">
+  <tr>
+    <td width="10%" align="center"><img src="images/raspicon.gif" width="50" height="62" /></td>
+    <td width="80%"><h1 style="color:#FFF" align="center">Raspberry Pi &copy; - Arduino &copy; WEB Server</h1></td>
+    <td width="10%" align="center"><img src="images/arduino.png" width="62" height="62" /></td>
+  </tr>
+</table>
+
+<h2 style="color:#FFF">
+****Arduino InfraRed Interface ****
+</h2>
+<p style="color:#800000"><input id="open" name="open" type="button" value="Open/Close Comm" />&nbsp;&nbsp;<input id="sopen" name="sopen" type="text" value="closed" size="8" />
+</p>
+
+<h2 style="color:#AF0">
+Infrared channel list
+</h2>
+
+<!-- Channel list begin -->
+<!-- keys are framed into a table; dimension, spacing, styles, could be modified as desired -->
+<table width="600px" border="3" cellspacing="0" cellpadding="2" style="color:#FDFD00">
+<tr>
+<td width="2%">
+<p>&nbsp;&nbsp;&nbsp;<input id="Ch1" name="C1" type="button" value="Channel 1" /></p>
+</td>
+<td width="2%">
+<p>&nbsp;&nbsp;&nbsp;<input id="Ch2" name="C2" type="button" value="Channel 2" /></p>
+</td>
+<td width="2%">
+<p>&nbsp;&nbsp;&nbsp;<input id="Ch3" name="C3" type="button" value="Channel 3" /></p>
+</td>
+<td width="2%">
+<p>&nbsp;&nbsp;&nbsp;<input id="Ch4" name="C4" type="button" value="Channel 4" /></p>
+</td>
+<td width="2%">
+<p>&nbsp;&nbsp;&nbsp;<input id="Ch5" name="C5" type="button" value="Channel 5" /></p>
+</td>
+</tr>
+</table>
+<!-- Channel list end -->
+
+<p style="color:#800000">Processing status: <input id="id_status" name="status" type="text" value="Idle" size="8" /></p>
+
+<table width="100px" border="0" cellspacing="10" cellpadding="2" style="color:#FDFD00">
+<tr>
+<td width="6%" rowspan=12 >
+</td>
+</tr>
+</table>
+<input id="getTemp" name="getTemp" type="button" value="Get room temperature" />&nbsp;&nbsp;<label><font face="verdana" color="yellow" size="3" id="TempText" >---</font></label>
+<p id="www"><font face="verdana" color="green" size="4" ></font></p>
+<h2><input name="reset" id="reset" type="button" value="Arduino Reset" /></h2>
+
+<h2><a href="index.html">HOME</a></h2>
+</body>
+</html>
